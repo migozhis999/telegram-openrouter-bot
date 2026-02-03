@@ -39,44 +39,54 @@ def ask_openrouter(chat_id, prompt):
     chat_history[chat_id] = history
     return reply
 
-def get_updates(offset):
-    return requests.get(f"{TG_API}/getUpdates", params={"timeout": 30, "offset": offset}).json()
+def get_updates(offset=None):
+    params = {"timeout": 30}
+    if offset:
+        params["offset"] = offset
+    return requests.get(f"{TG_API}/getUpdates", params=params).json()
 
 def send_message(chat_id, text):
     requests.post(f"{TG_API}/sendMessage", data={"chat_id": chat_id, "text": text})
 
 def main():
-    offset = 0
+    offset = None  # сброс offset, чтобы бот подхватывал только новые сообщения
     print("Бот с триггером запущен...")
+
     while True:
-        updates = get_updates(offset)
-        for update in updates.get("result", []):
-            offset = update["update_id"] + 1
+        try:
+            updates = get_updates(offset)
+            for update in updates.get("result", []):
+                offset = update["update_id"] + 1
+                print("New update:", update)  # отладка
 
-            if "message" not in update:
-                continue
+                if "message" not in update:
+                    continue
 
-            message = update["message"]
-            chat_id = message["chat"]["id"]
-            text = message.get("text")
+                message = update["message"]
+                chat_id = message["chat"]["id"]
+                text = message.get("text")
 
-            if not text:
-                continue
+                if not text:
+                    continue
 
-            # Проверяем наличие триггера
-            if trigger.lower() not in text.lower():
-                continue
+                # Проверяем триггер
+                if trigger.lower() not in text.lower():
+                    continue
 
-            clean_text = text.lower().replace(trigger.lower(), "").strip()
+                clean_text = text.lower().replace(trigger.lower(), "").strip()
 
-            try:
-                reply = ask_openrouter(chat_id, clean_text)
-                send_message(chat_id, reply)
-            except Exception as e:
-                print("ОШИБКА:", e)
-                send_message(chat_id, f"Ошибка: {e}")
+                try:
+                    reply = ask_openrouter(chat_id, clean_text)
+                    send_message(chat_id, reply)
+                except Exception as e:
+                    print("ОШИБКА:", e)
+                    send_message(chat_id, f"Ошибка: {e}")
 
-        time.sleep(1)
+            time.sleep(1)
+
+        except Exception as e:
+            print("Ошибка в основном цикле:", e)
+            time.sleep(5)  # ждем перед новой попыткой
 
 if __name__ == "__main__":
     main()
