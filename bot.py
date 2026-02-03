@@ -1,12 +1,12 @@
 import time
 import requests
 import os
+import sqlite3
+import json
 
-# Получаем токены из переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Проверка, что переменные подставились
 if not BOT_TOKEN:
     raise ValueError("Ошибка: переменная окружения BOT_TOKEN не задана!")
 if not OPENROUTER_API_KEY:
@@ -15,14 +15,37 @@ if not OPENROUTER_API_KEY:
 print("Переменные окружения успешно загружены!")
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+trigger = "черкаш"
+DB_FILE = "memory.db"
 
-chat_history = {}
-trigger = "черкаш"  # слово-триггер для реакции бота
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_history (
+    chat_id TEXT PRIMARY KEY,
+    history TEXT
+)
+""")
+conn.commit()
+
+def get_chat_history(chat_id):
+    cursor.execute("SELECT history FROM chat_history WHERE chat_id=?", (str(chat_id),))
+    row = cursor.fetchone()
+    if row:
+        return json.loads(row[0])
+    return []
+
+def save_chat_history(chat_id, history):
+    cursor.execute(
+        "REPLACE INTO chat_history (chat_id, history) VALUES (?, ?)",
+        (str(chat_id), json.dumps(history, ensure_ascii=False))
+    )
+    conn.commit()
 
 def ask_openrouter(chat_id, prompt):
-    history = chat_history.get(chat_id, [])
+    history = get_chat_history(chat_id)
     history.append({"role": "user", "content": prompt})
-    history = history[-10:]  # оставляем последние 10 сообщений
+    history = history[-10:]
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -36,7 +59,7 @@ def ask_openrouter(chat_id, prompt):
     reply = response.json()["choices"][0]["message"]["content"]
 
     history.append({"role": "assistant", "content": reply})
-    chat_history[chat_id] = history
+    save_chat_history(chat_id, history)
     return reply
 
 def get_updates(offset=None):
@@ -49,15 +72,15 @@ def send_message(chat_id, text):
     requests.post(f"{TG_API}/sendMessage", data={"chat_id": chat_id, "text": text})
 
 def main():
-    offset = None  # сброс offset, чтобы бот подхватывал только новые сообщения
-    print("Бот с триггером запущен...")
+    offset = None
+    print("Бот с постоянной SQLite-памятью запущен...")
 
     while True:
         try:
             updates = get_updates(offset)
             for update in updates.get("result", []):
                 offset = update["update_id"] + 1
-                print("New update:", update)  # отладка
+                print("New update:", update)
 
                 if "message" not in update:
                     continue
@@ -65,11 +88,9 @@ def main():
                 message = update["message"]
                 chat_id = message["chat"]["id"]
                 text = message.get("text")
-
                 if not text:
                     continue
 
-                # Проверяем триггер
                 if trigger.lower() not in text.lower():
                     continue
 
@@ -86,7 +107,7 @@ def main():
 
         except Exception as e:
             print("Ошибка в основном цикле:", e)
-            time.sleep(5)  # ждем перед новой попыткой
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
