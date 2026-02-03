@@ -1,18 +1,28 @@
 import time
 import requests
+import os
 
-BOT_TOKEN = "8500307111:AAF5hJILHfPSlltwvBtdiFgq-Icuy_Zp6dU"
-OPENROUTER_API_KEY = "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"
+# Получаем токены из переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+# Проверка, что переменные подставились
+if not BOT_TOKEN:
+    raise ValueError("Ошибка: переменная окружения BOT_TOKEN не задана!")
+if not OPENROUTER_API_KEY:
+    raise ValueError("Ошибка: переменная окружения OPENROUTER_API_KEY не задана!")
+
+print("Переменные окружения успешно загружены!")
 
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 chat_history = {}
-trigger = "черкаш"  # измените на любое слово, по которому бот будет реагировать
+trigger = "черкаш"  # слово-триггер для реакции бота
 
 def ask_openrouter(chat_id, prompt):
     history = chat_history.get(chat_id, [])
     history.append({"role": "user", "content": prompt})
-    history = history[-10:]
+    history = history[-10:]  # оставляем последние 10 сообщений
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -55,9 +65,8 @@ def main():
 
             # Проверяем наличие триггера
             if trigger.lower() not in text.lower():
-                continue  # игнорируем, если триггер не найден
+                continue
 
-            # Убираем триггер из текста перед отправкой в OpenRouter
             clean_text = text.lower().replace(trigger.lower(), "").strip()
 
             try:
